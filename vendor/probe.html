@@ -1,0 +1,75 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<script>
+window.__MP_DIR = (function(){
+  var cur = document.currentScript;
+  var src = (cur && cur.src) ? cur.src : 'vendor/mediapipe/pose.js';
+  return src.replace(/[^/]+$/, '');
+})();
+if(typeof createMediapipeSolutionsPackedAssets === 'undefined'){
+  window.createMediapipeSolutionsPackedAssets = {};
+}
+window.createMediapipeSolutionsPackedAssets.locateFile = function(f){ return window.__MP_DIR + f; };
+</script>
+<script src="/vendor/mediapipe/pose_solution_packed_assets_loader.js"></script>
+<script src="/vendor/mediapipe/pose.js" crossorigin="anonymous"></script>
+<script src="/vendor/mediapipe/camera_utils.js" crossorigin="anonymous"></script>
+</head><body>
+<canvas id="c" width="320" height="240"></canvas>
+<script>
+window.__log = [];
+window.__done = false;
+window.__result = {};
+function L(s){ window.__log.push(String(s)); }
+
+(async function(){
+  try{
+    L('Pose type: ' + typeof Pose);
+    L('Camera type: ' + typeof Camera);
+    if(typeof Pose === 'undefined'){ window.__result.ok=false; window.__result.err='Pose 未定义'; window.__done=true; return; }
+
+    const p = new Pose({ locateFile: (f)=> window.__MP_DIR + f });
+    p.setOptions({ modelComplexity:0, smoothLandmarks:true, enableSegmentation:false,
+      minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+    L('Pose 实例化成功');
+
+    p.onResults((r)=>{ L('onResults 收到帧, landmarks=' + (r.poseLandmarks?r.poseLandmarks.length:'null')); });
+
+    // 用一张纯色图当作输入，验证推理管线能跑通（无需摄像头）
+    const cv = document.getElementById('c');
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#888'; ctx.fillRect(0,0,320,240);
+    ctx.fillStyle = '#f0c'; ctx.beginPath(); ctx.arc(160,120,50,0,Math.PI*2); ctx.fill();
+
+    L('MP_DIR = ' + window.__MP_DIR);
+    L('Module.locateFile = ' + (typeof window.createMediapipeSolutionsPackedAssets.locateFile));
+    // 先探一下各个资源能否单独 fetch 到
+    const probeUrls = [
+      'pose_solution_packed_assets.data',
+      'pose_solution_simd_wasm_bin.wasm',
+      'pose_landmark_lite.tflite',
+      'pose_web.binarypb'
+    ];
+    for (const u of probeUrls) {
+      try {
+        const r = await fetch(window.__MP_DIR + u, {method:'GET'});
+        L('  fetch ' + u + ' -> ' + r.status + ' (' + (await r.arrayBuffer()).byteLength + 'B)');
+      } catch(e) { L('  fetch ' + u + ' 失败: ' + e.message); }
+    }
+
+    L('开始 send...');
+    const t0 = performance.now();
+    await p.send({ image: cv });
+    const dt = performance.now() - t0;
+    L('send 成功, 耗时 ' + dt.toFixed(0) + 'ms');
+    // 再送一帧，确认稳定
+    await p.send({ image: cv });
+    L('第二帧 send 也成功');
+
+    window.__result = { ok:true, inferMs: Math.round(dt) };
+  }catch(e){
+    L('错误: ' + e.message);
+    window.__result = { ok:false, err: e.message };
+  }
+  window.__done = true;
+})();
+</script></body></html>
